@@ -5,6 +5,7 @@ from PIL import Image
 import os
 import numpy as np
 from scipy import signal
+from mpi4py import MPI
 
 
 # Fonction pour appliquer un filtre de netteté à une image
@@ -37,22 +38,38 @@ def apply_filter(image):
     return Image.fromarray(sharpen_image, 'HSV').convert('RGB')
 
 
-path = "datas/perroquets/"
-# On crée un dossier de sortie
-if not os.path.exists("sorties/perroquets"):
-    os.makedirs("sorties/perroquets")
-out_path = "sorties/perroquets/"
+def main():
+    # Initialisation de MPI
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
 
-output_images = []
-for i in range(37):
-    image = path + "Perroquet{:04d}.jpg".format(i+1)
-    sharpen_image = apply_filter(image)
-    # On sauvegarde l'image modifiée
-    output_images.append(sharpen_image)
-    print(f"Image {i+1} traitée")
-print("Traitement terminé")
+    path = "datas/perroquets/"
+    out_dir = "sorties/perroquets"
 
-# On sauvegarde les images modifiées
-for i, img in enumerate(output_images):
-    img.save(out_path + "Perroquet{:04d}.jpg".format(i+1))
-print("Images sauvegardées")
+    # Le processus 0 crée le répertoire de sortie si besoin
+    if rank == 0 and not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    # On s'assure que le répertoire est créé avant d'écrire
+    comm.Barrier()
+
+    out_path = out_dir + "/"
+
+    n_images = 37
+
+    # Répartition simple : chaque processus traite un sous-ensemble d'images
+    for i in range(rank, n_images, size):
+        image_id = i + 1
+        image = path + "Perroquet{:04d}.jpg".format(image_id)
+        sharpen_image = apply_filter(image)
+        sharpen_image.save(out_path + "Perroquet{:04d}.jpg".format(image_id))
+        print(f"[rang {rank}] Image {image_id} traitée")
+
+    comm.Barrier()
+    if rank == 0:
+        print("Traitement terminé - images sauvegardées")
+
+
+if __name__ == "__main__":
+    main()
